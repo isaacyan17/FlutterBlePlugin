@@ -13,9 +13,17 @@ A new Flutter project.
   s.license          = { :file => '../LICENSE' }
   s.author           = { 'Your Company' => 'email@example.com' }
   s.source           = { :path => '.' }
-  s.source_files = 'Classes/**/*'
+  s.source_files = 'Classes/**/*','gen/**/*'
+  s.public_header_files = 'Classes/**/*.h', 'gen/**/*.h'
   s.dependency 'Flutter'
   s.platform = :ios, '9.0'
+  s.framework = 'CoreBluetooth'
+  s.subspec "Protos" do |ss|
+    ss.source_files = "gen/*.pbobjc.{h,m}", "gen/**/*.pbobjc.{h,m}"
+    ss.header_mappings_dir = "gen"
+    ss.requires_arc = false
+    ss.dependency "Protobuf", '~> 3.21.2'
+  end
 
   # Flutter.framework does not contain a i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }

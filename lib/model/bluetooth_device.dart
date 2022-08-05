@@ -141,6 +141,8 @@ class BluetoothDevice {
   Future<bool> get canSendWriteWithoutResponse =>
       Future.error(UnimplementedError());
 
+
+  ///读取设备rssi值
   Future<DeviceRssi> getDeviceRssi() async {
     await FlutterBlePlatform.instance.invoke('readRssi', id.toString());
     return FlutterBlePlatform.instance._methodStream
