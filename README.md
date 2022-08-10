@@ -72,3 +72,95 @@ FlutterBle _flutterBlePlugin = FlutterBle();
 
 ### 搜索LE设备
 
+```dart
+  
+    List<ScanResult> r = _flutterBlePlugin.startScan()// 返回类型是一个list
+	Stream r =_flutterBlePlugin.scan()// 返回类型是Stream
+
+```
+
+### 连接蓝牙
+
+```dart
+    device.connect() // device -> BluetoothDevice
+	
+	/// connect 参数，默认重连一次
+	Future<void> connect({
+    Duration? timeout,
+    bool autoConnect = false,
+    int reconnectCount = 1,
+  })
+```
+
+### 断开蓝牙连接
+
+```dart
+    device.disconnect() // device -> BluetoothDevice
+```
+
+### 蓝牙状态监听
+
+```dart
+    await device.connect(); // device -> BluetoothDevice
+	device.state.listen(...); //在connect方法之后监听，可以避免收到默认值
+```
+
+### 发现服务
+
+```dart
+   device.discoverServices();
+```
+
+### 广播数据
+
+```dart
+   ScanResult.advertisementData;
+```
+
+### 读取Rssi
+
+```dart
+   device.getDeviceRssi()；
+```
+
+### 读写特征值
+
+```dart
+// Reads all characteristics
+var characteristics = service.characteristics;
+for(BluetoothCharacteristic c in characteristics) {
+    List<int> value = await c.read();
+    print(value);
+}
+
+// Writes to a characteristic
+await c.write([0x12, 0x34])
+```
+
+### 设置读通道
+```dart
+await characteristic.setNotifyValue(true);
+characteristic.value.listen((value) {
+    // do something with new value
+});
+```
+
+### 读写MTU
+
+
+```dart
+final mtu = await device.mtu.first;
+await device.requestMtu(512); // iOS 做尝试设置
+```
+
+### 蓝牙开关监听
+
+
+```dart
+_flutterBlePlugin.state.listen()
+```
+
+
+## Maintain Plan
+
+### 后续计划
