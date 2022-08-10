@@ -111,6 +111,13 @@ class BluetoothDevice {
     });
   }
 
+  Future<BluetoothDeviceState> deviceState() async{
+    return await FlutterBlePlatform.instance
+        .invoke('deviceState', id.toString())
+        .then((buffer) => protos.DeviceStateResponse.fromBuffer(buffer))
+        .then((p) => BluetoothDeviceState.values[p.state.value]);
+  }
+
   /// The MTU size in bytes
   Stream<int> get mtu async* {
     yield await FlutterBlePlatform.instance

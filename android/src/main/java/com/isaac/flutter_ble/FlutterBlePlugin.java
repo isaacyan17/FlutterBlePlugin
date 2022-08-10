@@ -184,13 +184,18 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
             }
             result.success(null);
         }else if (call.method.equals("deviceState")) {
-            String deviceId = (String)call.arguments;
-            BluetoothDevice device = mBleController.getLruCacheDevice(deviceId).getDevice();
-            int state = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
-            try {
-                result.success(ProtoMaker.from(device, state).toByteArray());
-            } catch(Exception e) {
-                result.error("device_state_error", e.getMessage(), e);
+            String deviceId = (String) call.arguments;
+            BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
+            if (lruCacheDevice != null) {
+                BluetoothDevice device = lruCacheDevice.getDevice();
+                int state = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
+                try {
+                    result.success(ProtoMaker.from(device, state).toByteArray());
+                } catch (Exception e) {
+                    result.error("device_state_error", e.getMessage(), e);
+                }
+            }else{
+                result.error("device_state_error", "device is null!", null);
             }
         }else if (call.method.equals("discoverServices")) {
             String deviceId = (String)call.arguments;
