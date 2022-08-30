@@ -37,6 +37,7 @@ import com.isaac.flutter_ble.controller.BluetoothController;
 import com.isaac.flutter_ble.model.BleRuleConfig;
 import com.isaac.flutter_ble.model.BluetoothDeviceModel;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -173,15 +174,7 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
 
         }else if (call.method.equals("disconnect")) {
             String deviceId = (String) call.arguments;
-            BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
-            if (lruCacheDevice != null) {
-                int connectionState = mBluetoothManager.getConnectionState(lruCacheDevice.getDevice(), BluetoothProfile.GATT);
-                lruCacheDevice.getGatt().disconnect();
-                if(connectionState == BluetoothProfile.STATE_DISCONNECTED){
-                    lruCacheDevice.getGatt().close();
-                }
-                mBleController.removeLruCacheDevice(deviceId);
-            }
+            disConnect(deviceId);
             result.success(null);
         }else if (call.method.equals("deviceState")) {
             String deviceId = (String) call.arguments;
@@ -195,6 +188,22 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                     result.error("device_state_error", e.getMessage(), e);
                 }
             }else{
+                ///如果本地集合没有蓝牙示例，筛查一下蓝牙适配器是否存在这个蓝牙连接
+                List<BluetoothDevice> devices = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT);
+                for(BluetoothDevice d: devices){
+                    if(d.getAddress()!=null && d.getAddress().equals(deviceId)){
+                        /// 适配器存在一个连接示例，重新保存这个设备
+                        System.out.println("--------mBluetoothManager存在一个连接示例，重新保存这个设备");
+                        mBleController.addLruCacheDevice(new BluetoothDeviceModel(d));
+                        int state = mBluetoothManager.getConnectionState(d, BluetoothProfile.GATT);
+                        try {
+                            result.success(ProtoMaker.from(d, state).toByteArray());
+                        } catch (Exception e) {
+                            result.error("device_state_error", e.getMessage(), e);
+                        }
+                        return;
+                    }
+                }
                 result.error("device_state_error", "device is null!", null);
             }
         }else if (call.method.equals("discoverServices")) {
@@ -525,6 +534,25 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
         }
     }
 
+
+    /**
+     * 断连蓝牙
+     * @param deviceId
+     */
+    void disConnect(String deviceId){
+        BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
+        if (lruCacheDevice != null) {
+            int connectionState = mBluetoothManager.getConnectionState(lruCacheDevice.getDevice(), BluetoothProfile.GATT);
+            lruCacheDevice.getGatt().disconnect();
+            //刷新device
+            refreshDeviceCache(lruCacheDevice.getGatt());
+            if(connectionState == BluetoothProfile.STATE_DISCONNECTED){
+                lruCacheDevice.getGatt().close();
+            }
+            mBleController.removeLruCacheDevice(deviceId);
+        }
+    }
+
     /**
      * 初始化
      */
@@ -727,7 +755,8 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                             lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECT_FAILURE);
                         } else if (lruCacheDevice.getDeviceState() == Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTED) {
                             lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.DISCONNECTED);
-
+                            ///当前处于CONNECTED-> DISCONNECTED过程中，断开连接
+                            disConnect(lruCacheDevice.getDeviceId());
                         }
 
                     }
@@ -927,5 +956,18 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 channel.invokeMethod(name,byteArray);
             }
         });
+    }
+
+    private synchronized void refreshDeviceCache(BluetoothGatt bluetoothGatt) {
+        try {
+            final Method refresh = BluetoothGatt.class.getMethod("refresh");
+            if (refresh != null && bluetoothGatt != null) {
+                boolean success = (Boolean) refresh.invoke(bluetoothGatt);
+                Log.i(tag,"refreshDeviceCache, is success:  " + success);
+            }
+        } catch (Exception e) {
+            Log.i(tag,"exception occur while refreshing device: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 }
