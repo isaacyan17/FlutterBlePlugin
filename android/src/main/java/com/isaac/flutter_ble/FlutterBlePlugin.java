@@ -161,9 +161,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 ruleConfig.setAutoConnect(b.getAndroidAutoConnect());
                 ruleConfig.setReConnectCount(b.getReconncectCount());
                 ruleConfig.setRemoteId(b.getRemoteId());
-                BluetoothDeviceModel tempDevice = mBleController.getTempDevice(b.getRemoteId());
-                tempDevice.setGattCallback(getBluetoothGattCallback());
-                mBleController.setTempBluetoothGattCallback(tempDevice);
 
                 connect();
                 pendingResult.success(null);
@@ -176,37 +173,17 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
             String deviceId = (String) call.arguments;
             disConnect(deviceId);
             result.success(null);
-        }else if (call.method.equals("deviceState")) {
+        } else if (call.method.equals("deviceState")) {
             String deviceId = (String) call.arguments;
-            BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
-            if (lruCacheDevice != null) {
-                BluetoothDevice device = lruCacheDevice.getDevice();
-                int state = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
-                try {
-                    result.success(ProtoMaker.from(device, state).toByteArray());
-                } catch (Exception e) {
-                    result.error("device_state_error", e.getMessage(), e);
-                }
-            }else{
-                ///如果本地集合没有蓝牙示例，筛查一下蓝牙适配器是否存在这个蓝牙连接
-                List<BluetoothDevice> devices = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT);
-                for(BluetoothDevice d: devices){
-                    if(d.getAddress()!=null && d.getAddress().equals(deviceId)){
-                        /// 适配器存在一个连接示例，重新保存这个设备
-                        System.out.println("--------mBluetoothManager存在一个连接示例，重新保存这个设备");
-                        mBleController.addLruCacheDevice(new BluetoothDeviceModel(d));
-                        int state = mBluetoothManager.getConnectionState(d, BluetoothProfile.GATT);
-                        try {
-                            result.success(ProtoMaker.from(d, state).toByteArray());
-                        } catch (Exception e) {
-                            result.error("device_state_error", e.getMessage(), e);
-                        }
-                        return;
-                    }
-                }
-                result.error("device_state_error", "device is null!", null);
+            BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(deviceId);
+            int state = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
+            try {
+                result.success(ProtoMaker.from(device, state).toByteArray());
+            } catch (Exception e) {
+                result.error("device_state_error", e.getMessage(), e);
             }
-        }else if (call.method.equals("discoverServices")) {
+
+        } else if (call.method.equals("discoverServices")) {
             String deviceId = (String)call.arguments;
             try {
                 BluetoothGatt gatt = mBleController.getLruCacheDevice(deviceId).getGatt();
@@ -484,14 +461,14 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
      */
     public void connect() {
         try {
-            BluetoothDeviceModel device = mBleController.getTempDevice(ruleConfig.getRemoteId());
+            BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(ruleConfig.getRemoteId());
 
             if (device == null) {
                 pendingResult.error("connect", "device not exist", null);
                 return;
             }
 
-            BluetoothGattCallback gattCallback = device.getGattCallback();
+            BluetoothGattCallback gattCallback = getBluetoothGattCallback();
             if (gattCallback == null) {
                 pendingResult.error("connect", "BluetoothGattCallback can not be Null!", null);
                 return;
@@ -500,33 +477,28 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 pendingResult.error("connect", "Bluetooth not enable!", null);
                 return;
             }
-            if (device.getDevice() == null) {
-                pendingResult.error("connect", "Not Found Device Exception Occurred!", null);
-
-                return;
-            }
             if (Looper.myLooper() == null || Looper.myLooper() != Looper.getMainLooper()) {
                 System.out.println("Be careful: currentThread is not MainThread!");
             }
-            BluetoothDevice bluetoothDevice = device.getDevice();
-            boolean isConnected = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT).contains(bluetoothDevice);
-            if (isConnected) {
+            boolean isConnected = mBluetoothManager.getConnectedDevices(BluetoothProfile.GATT).contains(device);
+            if (isConnected && mBleController.containsLruCacheDevice(device.getAddress())) {
                 pendingResult.error("already_connected", "connection with device already exists", null);
                 return;
-
             }
-            device.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING);
             BluetoothGatt gattServer;
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                gattServer = bluetoothDevice.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback, TRANSPORT_LE);
+                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback, TRANSPORT_LE);
 
             } else {
-                gattServer = bluetoothDevice.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback);
+                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback);
             }
-            device.setGatt(gattServer);
             //将数据存入bleLruHashMap中
-            mBleController.addLruCacheDevice(device);
+            BluetoothDeviceModel lruModel = new BluetoothDeviceModel(device);
+            lruModel.setGatt(gattServer);
+            lruModel.setGattCallback(gattCallback);
+            lruModel.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING);
+            mBleController.addLruCacheDevice(lruModel);
 
         } catch (Exception e) {
             pendingResult.error("Exception", e.getMessage(), e);
@@ -539,14 +511,17 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
      * 断连蓝牙
      * @param deviceId
      */
-    void disConnect(String deviceId){
+    void disConnect(String deviceId) {
+        BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(deviceId);
         BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
         if (lruCacheDevice != null) {
-            int connectionState = mBluetoothManager.getConnectionState(lruCacheDevice.getDevice(), BluetoothProfile.GATT);
             lruCacheDevice.getGatt().disconnect();
             //刷新device
             refreshDeviceCache(lruCacheDevice.getGatt());
-            if(connectionState == BluetoothProfile.STATE_DISCONNECTED){
+
+            int connectionState = mBluetoothManager.getConnectionState(device, BluetoothProfile.GATT);
+
+            if (connectionState == BluetoothProfile.STATE_DISCONNECTED) {
                 lruCacheDevice.getGatt().close();
             }
             mBleController.removeLruCacheDevice(deviceId);
@@ -625,8 +600,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
         byte[] data = pendingCall.arguments();
         try {
             Protos.ScanSettings b = Protos.ScanSettings.newBuilder().mergeFrom(data).build();
-            //不允许重复设备
-            mBleController.clearTempDevice();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
 
                 BluetoothLeScanner bluetoothLeScanner = mBluetoothAdapter.getBluetoothLeScanner();
@@ -634,9 +607,11 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 for (String s : b.getServiceUuidsList()) {
                     filters.add(new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(s)).build());
                 }
-
+                ScanFilter.Builder builder = new ScanFilter.Builder();
+                ScanFilter filter = builder.build();
+                filters.add(filter);
                 bluetoothLeScanner.startScan(filters,
-                        new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(),
+                        new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build(),
                         getScanCallback21());
             } else {
                 List<String> serviceUuids = b.getServiceUuidsList();
@@ -659,18 +634,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 @Override
                 public void onScanResult(int callbackType, ScanResult result) {
                     super.onScanResult(callbackType, result);
-                    if (result != null && result.getDevice() != null
-                            && !mBleController.containsTempDevice(result.getDevice().getAddress())) {
-                        mBleController.addTempDevice(new BluetoothDeviceModel(result.getDevice(), result.getRssi()));
-
-                    } else if (result != null && result.getDevice() != null && mBleController.containsTempDevice(result.getDevice().getAddress())) {
-                        //本地缓存中有数据，更新rssi
-                        BluetoothDeviceModel scanningDevice = mBleController.getTempDevice(result.getDevice().getAddress());
-                        scanningDevice.setRssi(result.getRssi());
-                        mBleController.addTempDevice(scanningDevice);
-
-                    }
-//                    System.out.println("---------------- ScanResult, "+result.getDevice().getAddress());
                     Protos.ScanResult scanResult = ProtoMaker.from(result.getDevice(), result);
                     invokeUIThread("ScanResult", scanResult.toByteArray());
                 }
@@ -683,6 +646,8 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 @Override
                 public void onScanFailed(int errorCode) {
                     super.onScanFailed(errorCode);
+                    System.out.println("--------------onScanFailed");
+
                 }
             };
         }
@@ -703,15 +668,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 @Override
                 public void onLeScan(final BluetoothDevice bluetoothDevice, int rssi,
                                      byte[] scanRecord) {
-                    if (bluetoothDevice != null && bluetoothDevice.getAddress() != null) {
-                        if (mBleController.containsTempDevice(bluetoothDevice.getAddress())) {
-                            BluetoothDeviceModel tempDevice = mBleController.getTempDevice(bluetoothDevice.getAddress());
-                            tempDevice.setRssi(rssi);
-                            mBleController.addTempDevice(tempDevice);
-                        } else {
-                            mBleController.addTempDevice(new BluetoothDeviceModel(bluetoothDevice, rssi));
-                        }
-                    }
 
                     Protos.ScanResult scanResult = ProtoMaker.from(bluetoothDevice, scanRecord, rssi);
                     invokeUIThread("ScanResult", scanResult.toByteArray());
@@ -748,29 +704,9 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     if (!mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
                         gatt.close();
-                    } else {
-                        BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(gatt.getDevice().getAddress());
-
-                        if (lruCacheDevice.getDeviceState() == Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING) {
-                            lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECT_FAILURE);
-                        } else if (lruCacheDevice.getDeviceState() == Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTED) {
-                            lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.DISCONNECTED);
-                            ///当前处于CONNECTED-> DISCONNECTED过程中，断开连接
-                            disConnect(lruCacheDevice.getDeviceId());
-                        }
-
                     }
                 }
-                if (newState == BluetoothProfile.STATE_CONNECTED) {
-                    //表示当前蓝牙连接，但是还没有发现服务，此时不要给flutter传递connected的回调
-                    //收到BluetoothProfile.STATE_CONNECTED后，我们执行discover方法
-                    try {
-                        gatt.discoverServices();
-                    } catch (Exception e) {
-                        invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), 0).toByteArray());
-                    }
-                } else
-                    invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), newState).toByteArray());
+                invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), newState).toByteArray());
             }
 
             @Override
@@ -783,8 +719,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                         lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTED);
                         mBleController.addLruCacheDevice(lruCacheDevice);
                     }
-                    ///收到GATT_SUCCESS 我们就认为蓝牙已经连接成功
-                    invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), 2).toByteArray());
                 }
                 Protos.DiscoverServicesResult.Builder p = Protos.DiscoverServicesResult.newBuilder();
                 p.setRemoteId(gatt.getDevice().getAddress());

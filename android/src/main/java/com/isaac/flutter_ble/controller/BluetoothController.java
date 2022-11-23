@@ -11,11 +11,9 @@ import java.util.List;
 
 public class BluetoothController {
     private final BleLruHashMap<String, BluetoothDeviceModel> bleLruHashMap;
-    private final HashMap<String, BluetoothDeviceModel> tempDevices;
 
     public BluetoothController() {
         bleLruHashMap = new BleLruHashMap<String, BluetoothDeviceModel>(7);
-        tempDevices = new HashMap<>();
     }
 
     public void addLruCacheDevice(BluetoothDeviceModel device) {
@@ -67,40 +65,6 @@ public class BluetoothController {
     public BluetoothGattCallback getLruCacheDeviceGattCallback(String remoteId) {
         if (remoteId != null) {
             BluetoothDeviceModel bluetoothDeviceModel = bleLruHashMap.get(remoteId);
-            if (bluetoothDeviceModel != null)
-                return bluetoothDeviceModel.getGattCallback();
-        }
-        return null;
-    }
-
-    /**
-     * 缓存扫描设备
-     */
-    public void addTempDevice(BluetoothDeviceModel device) {
-        tempDevices.put(device.getDeviceId(), device);
-
-    }
-
-    public void clearTempDevice() {
-        tempDevices.clear();
-    }
-
-    public boolean containsTempDevice(String deviceId) {
-        return tempDevices.containsKey(deviceId);
-    }
-
-    public BluetoothDeviceModel getTempDevice(String deviceId) {
-        return tempDevices.get(deviceId);
-    }
-
-    public void setTempBluetoothGattCallback(BluetoothDeviceModel device) {
-        if (device != null) {
-            tempDevices.put(device.getDeviceId(), device);
-        }
-    }
-    public BluetoothGattCallback getTempBluetoothGattCallback(String remoteId) {
-        if (remoteId != null) {
-            BluetoothDeviceModel bluetoothDeviceModel = tempDevices.get(remoteId);
             if (bluetoothDeviceModel != null)
                 return bluetoothDeviceModel.getGattCallback();
         }
