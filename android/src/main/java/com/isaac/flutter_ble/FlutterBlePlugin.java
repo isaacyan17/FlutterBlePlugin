@@ -4,7 +4,6 @@ import static android.bluetooth.BluetoothDevice.TRANSPORT_LE;
 
 import android.Manifest;
 import android.app.Activity;
-import android.app.Application;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -78,6 +77,8 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
     //
     private ScanCallback scanCallback21;
     private BluetoothAdapter.LeScanCallback scanCallback18;
+    ///扫描结果是否允许重复值
+    private boolean allowDuplicates = false;
 
     private BleRuleConfig ruleConfig;
 
@@ -99,12 +100,10 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
 
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
-//        System.out.println("--------------------------activity: " + (mActivity == null));
         if (call.method.equals("state")) {
             // 设备蓝牙状态
             Protos.BluetoothState.Builder b = Protos.BluetoothState.newBuilder();
             try {
-                System.out.println("--------------------------mBluetoothAdapter: " + (mBluetoothAdapter == null));
                 switch (mBluetoothAdapter.getState()) {
                     case BluetoothAdapter.STATE_ON:
                         b.setState(Protos.BluetoothState.State.ON);
@@ -133,9 +132,7 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
             result.success(mBluetoothAdapter != null);
         } else if (call.method.equals("startScan")) {
             //扫描蓝牙设备
-            pendingCall = call;
-            pendingResult = result;
-            startScan();
+            startScan(call, result);
             result.success(null);
         } else if (call.method.equals("stopScan")) {
             //停止扫描蓝牙设备
@@ -589,29 +586,43 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
     /**
      * 扫描设备
      */
-    public void startScan() {
+    public void startScan(MethodCall call,Result result) {
         //权限检查
         if (ContextCompat.checkSelfPermission(mAppContext, Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
             //将权限问题抛出给宿主工程
-            pendingResult.error("permission_denied", "permission access_fine_location denied", null);
+            result.error("permission_denied", "permission access_fine_location denied", null);
             return;
         }
-        byte[] data = pendingCall.arguments();
+        byte[] data = call.arguments();
         try {
             Protos.ScanSettings b = Protos.ScanSettings.newBuilder().mergeFrom(data).build();
+            allowDuplicates = b.getAllowDuplicates();
+            mBleController.clearScannedDevice();
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
 
                 BluetoothLeScanner bluetoothLeScanner = mBluetoothAdapter.getBluetoothLeScanner();
-                List<ScanFilter> filters = new ArrayList<>(b.getServiceUuidsCount());
-                for (String s : b.getServiceUuidsList()) {
-                    filters.add(new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(s)).build());
+                int count  = b.getServiceUuidsCount();
+                List<ScanFilter> filters = new ArrayList<>(count);
+                for (int i = 0; i < count; i++) {
+                    filters.add(new ScanFilter.Builder().setServiceUuid(ParcelUuid.fromString(b.getServiceUuids(i))).build());
                 }
-                ScanFilter.Builder builder = new ScanFilter.Builder();
-                ScanFilter filter = builder.build();
-                filters.add(filter);
+                if (filters.size() <= 0) {
+                    ///没有过滤规则的情况下，增加一个空filter,用于部分机型后台扫描
+                    filters.add(new ScanFilter.Builder().build());
+                }
+                ScanSettings settings;
+                if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.O){
+                    settings =  new ScanSettings.Builder()
+                            .setPhy(ScanSettings.PHY_LE_ALL_SUPPORTED)
+                            .setLegacy(false)
+                            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build();
+                }else {
+                    settings =  new ScanSettings.Builder()
+                            .setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build();
+                }
                 bluetoothLeScanner.startScan(filters,
-                        new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_POWER).build(),
+                        settings,
                         getScanCallback21());
             } else {
                 List<String> serviceUuids = b.getServiceUuidsList();
@@ -624,7 +635,7 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                     throw new IllegalStateException("getBluetoothLeScanner() is null. Is the Adapter on?");
             }
         } catch (Exception e) {
-            pendingResult.error("start_scan_error", e.getMessage(), e);
+            result.error("start_scan_error", e.getMessage(), e);
         }
     }
 
@@ -634,8 +645,19 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 @Override
                 public void onScanResult(int callbackType, ScanResult result) {
                     super.onScanResult(callbackType, result);
-                    Protos.ScanResult scanResult = ProtoMaker.from(result.getDevice(), result);
-                    invokeUIThread("ScanResult", scanResult.toByteArray());
+                    if (result != null) {
+                        if (!allowDuplicates
+                                && result.getDevice() != null
+                                && result.getDevice().getAddress() != null){
+                            if (mBleController.hasScannedDevice(result.getDevice().getAddress())) {
+                                return;
+                            }
+                            mBleController.addScannedDevice(result.getDevice().getAddress());
+                        }
+
+                        Protos.ScanResult scanResult = ProtoMaker.from(result.getDevice(), result);
+                        invokeUIThread("ScanResult", scanResult.toByteArray());
+                    }
                 }
 
                 @Override
@@ -668,6 +690,14 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 @Override
                 public void onLeScan(final BluetoothDevice bluetoothDevice, int rssi,
                                      byte[] scanRecord) {
+                    if (!allowDuplicates
+                            && bluetoothDevice != null
+                            && bluetoothDevice.getAddress() != null){
+                        if (mBleController.hasScannedDevice(bluetoothDevice.getAddress())) {
+                            return;
+                        }
+                        mBleController.addScannedDevice(bluetoothDevice.getAddress());
+                    }
 
                     Protos.ScanResult scanResult = ProtoMaker.from(bluetoothDevice, scanRecord, rssi);
                     invokeUIThread("ScanResult", scanResult.toByteArray());

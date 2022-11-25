@@ -11,9 +11,12 @@ import java.util.List;
 
 public class BluetoothController {
     private final BleLruHashMap<String, BluetoothDeviceModel> bleLruHashMap;
+    ///扫描时的结果缓存
+    private final List<String> scanDeviceBuffer;
 
     public BluetoothController() {
         bleLruHashMap = new BleLruHashMap<String, BluetoothDeviceModel>(7);
+        scanDeviceBuffer = new ArrayList<>();
     }
 
     public void addLruCacheDevice(BluetoothDeviceModel device) {
@@ -69,6 +72,18 @@ public class BluetoothController {
                 return bluetoothDeviceModel.getGattCallback();
         }
         return null;
+    }
+
+    public void addScannedDevice(String remoteId) {
+        scanDeviceBuffer.add(remoteId);
+    }
+
+    public boolean hasScannedDevice(String remoteId) {
+        return scanDeviceBuffer.contains(remoteId);
+    }
+
+    public void clearScannedDevice() {
+        scanDeviceBuffer.clear();
     }
 
 }

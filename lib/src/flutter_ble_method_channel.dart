@@ -63,8 +63,9 @@ class MethodChannelFlutterBle extends FlutterBlePlatform {
   Future startScan({
     List<Guid> services = const [],
     Duration? timeout,
+    bool allowDuplicates = false,
   }) async {
-    await scan(services: services, timeout: timeout).drain();
+    await scan(services: services, timeout: timeout,allowDuplicates: allowDuplicates).drain();
     return _scanResults.value;
   }
 
@@ -72,8 +73,10 @@ class MethodChannelFlutterBle extends FlutterBlePlatform {
   Stream<ScanResult> scan({
     List<Guid> services = const [],
     Duration? timeout,
+    bool allowDuplicates = false,
   }) async* {
     var settings = protos.ScanSettings.create()
+      ..allowDuplicates = allowDuplicates
       ..serviceUuids.addAll(services.map((e) => e.toString()).toList());
     if (_isScanning.value == true) {
       throw Exception(

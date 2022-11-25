@@ -13,9 +13,10 @@ class FlutterBle {
   Future startScan({
     List<Guid> services = const [],
     Duration? timeout,
+    bool allowDuplicates = false,
   }) {
-    return FlutterBlePlatform.instance
-        .startScan(services: services, timeout: timeout);
+    return FlutterBlePlatform.instance.startScan(
+        services: services, timeout: timeout, allowDuplicates: allowDuplicates);
   }
 
   Future stopScan() {
@@ -25,9 +26,10 @@ class FlutterBle {
   Stream<ScanResult> scan({
     List<Guid> services = const [],
     Duration? timeout,
+    bool allowDuplicates = false,
   }) {
-    return FlutterBlePlatform.instance
-        .scan(services: services, timeout: timeout);
+    return FlutterBlePlatform.instance.scan(
+        services: services, timeout: timeout, allowDuplicates: allowDuplicates);
   }
 
   Stream<List<ScanResult>> get scanResults =>

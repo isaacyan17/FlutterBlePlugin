@@ -28,12 +28,16 @@ abstract class FlutterBlePlatform extends PlatformInterface {
   Future startScan({
     List<Guid> services = const [],
     Duration? timeout,
+    bool allowDuplicates = false,
   }) {
     throw UnimplementedError('getState() has not been implemented.');
   }
 
-  Stream<ScanResult> scan({List<Guid> services = const [],
-    Duration? timeout,}){
+  Stream<ScanResult> scan({
+    List<Guid> services = const [],
+    Duration? timeout,
+    bool allowDuplicates = false,
+  }) {
     throw UnimplementedError('getState() has not been implemented.');
   }
 
