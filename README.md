@@ -75,7 +75,11 @@ FlutterBle _flutterBlePlugin = FlutterBle();
 ```dart
   
     List<ScanResult> r = _flutterBlePlugin.startScan()// 返回类型是一个list
-	Stream r =_flutterBlePlugin.scan()// 返回类型是Stream
+	Stream r =_flutterBlePlugin.scan({
+                                    List<Guid> services = const [],  //service filter collection
+                                    Duration? timeout,  
+                                    bool allowDuplicates = false, // allow duplicate results when scan
+                                  })      // 返回类型是Stream
 
 ```
 
@@ -149,8 +153,9 @@ characteristic.value.listen((value) {
 
 
 ```dart
+///android only
 final mtu = await device.mtu.first;
-await device.requestMtu(512); // iOS 做尝试设置
+await device.requestMtu(512);
 ```
 
 ### 蓝牙开关监听
