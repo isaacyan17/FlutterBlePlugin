@@ -7,6 +7,7 @@ class FlutterBle {
 
   factory FlutterBle() => _instance;
 
+  /// 手机蓝牙状态
   Stream<BluetoothState> get state => FlutterBlePlatform.instance.state;
 
   Future startScan({

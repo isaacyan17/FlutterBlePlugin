@@ -106,7 +106,6 @@ class BluetoothDevice {
         .map((buffer) => protos.DeviceStateResponse.fromBuffer(buffer))
         .where((p) => p.remoteId == id.toString())
         .map((p) {
-      print('DeviceState, $p');
       return BluetoothDeviceState.values[p.state.value];
     });
   }
