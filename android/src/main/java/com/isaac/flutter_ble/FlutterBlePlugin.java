@@ -734,6 +734,8 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                     if (!mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
                         gatt.close();
+                    }else{
+                        disConnect(gatt.getDevice().getAddress());
                     }
                 }
                 invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), newState).toByteArray());
