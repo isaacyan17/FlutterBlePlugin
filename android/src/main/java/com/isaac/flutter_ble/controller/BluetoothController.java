@@ -1,12 +1,10 @@
 package com.isaac.flutter_ble.controller;
 
-import android.bluetooth.BluetoothGattCallback;
 
 import com.isaac.flutter_ble.model.BluetoothDeviceModel;
 import com.isaac.flutter_ble.utils.BleLruHashMap;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 
 public class BluetoothController {
@@ -37,11 +35,11 @@ public class BluetoothController {
         }
     }
 
-    public void removeLruCacheDevice(String deviceId) {
+    public BluetoothDeviceModel removeLruCacheDevice(String deviceId) {
         if (deviceId == null) {
-            return;
+            return null;
         }
-        bleLruHashMap.remove(deviceId);
+        return bleLruHashMap.remove(deviceId);
     }
 
 
@@ -59,20 +57,6 @@ public class BluetoothController {
         return null;
     }
 
-    public void setLruCacheDeviceGattCallback(BluetoothDeviceModel device) {
-        if (device != null) {
-            bleLruHashMap.put(device.getDeviceId(), device);
-        }
-    }
-
-    public BluetoothGattCallback getLruCacheDeviceGattCallback(String remoteId) {
-        if (remoteId != null) {
-            BluetoothDeviceModel bluetoothDeviceModel = bleLruHashMap.get(remoteId);
-            if (bluetoothDeviceModel != null)
-                return bluetoothDeviceModel.getGattCallback();
-        }
-        return null;
-    }
 
     public void addScannedDevice(String remoteId) {
         scanDeviceBuffer.add(remoteId);

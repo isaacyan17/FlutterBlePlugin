@@ -12,7 +12,6 @@ public class BluetoothDeviceModel {
     BluetoothDevice device;
     Protos.DeviceStateResponse.BluetoothDeviceState deviceState;
     private int rssi;
-    BluetoothGattCallback gattCallback;
 
     public BluetoothDeviceModel(BluetoothDevice device) {
         this.device = device;
@@ -77,13 +76,6 @@ public class BluetoothDeviceModel {
         this.rssi = rssi;
     }
 
-    public BluetoothGattCallback getGattCallback() {
-        return gattCallback;
-    }
-
-    public void setGattCallback(BluetoothGattCallback gattCallback) {
-        this.gattCallback = gattCallback;
-    }
 
     /**
      * 返回设备MAC地址

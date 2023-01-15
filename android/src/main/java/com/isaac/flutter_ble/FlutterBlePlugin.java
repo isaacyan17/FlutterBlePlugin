@@ -4,6 +4,7 @@ import static android.bluetooth.BluetoothDevice.TRANSPORT_LE;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.Application;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothGatt;
@@ -100,6 +101,7 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
 
     @Override
     public void onMethodCall(@NonNull MethodCall call, @NonNull Result result) {
+//        System.out.println("--------------------------activity: " + (mActivity == null));
         if (call.method.equals("state")) {
             // 设备蓝牙状态
             Protos.BluetoothState.Builder b = Protos.BluetoothState.newBuilder();
@@ -465,11 +467,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
                 return;
             }
 
-            BluetoothGattCallback gattCallback = getBluetoothGattCallback();
-            if (gattCallback == null) {
-                pendingResult.error("connect", "BluetoothGattCallback can not be Null!", null);
-                return;
-            }
             if (!isBlueEnable()) {
                 pendingResult.error("connect", "Bluetooth not enable!", null);
                 return;
@@ -485,15 +482,15 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
             BluetoothGatt gattServer;
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback, TRANSPORT_LE);
+                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), mGattCallback, TRANSPORT_LE);
 
             } else {
-                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), gattCallback);
+                gattServer = device.connectGatt(mAppContext, ruleConfig.isAutoConnect(), mGattCallback);
             }
             //将数据存入bleLruHashMap中
             BluetoothDeviceModel lruModel = new BluetoothDeviceModel(device);
             lruModel.setGatt(gattServer);
-            lruModel.setGattCallback(gattCallback);
+
             lruModel.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING);
             mBleController.addLruCacheDevice(lruModel);
 
@@ -510,7 +507,7 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
      */
     void disConnect(String deviceId) {
         BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(deviceId);
-        BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(deviceId);
+        BluetoothDeviceModel lruCacheDevice = mBleController.removeLruCacheDevice(deviceId);
         if (lruCacheDevice != null) {
             lruCacheDevice.getGatt().disconnect();
             //刷新device
@@ -521,7 +518,6 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
             if (connectionState == BluetoothProfile.STATE_DISCONNECTED) {
                 lruCacheDevice.getGatt().close();
             }
-            mBleController.removeLruCacheDevice(deviceId);
         }
     }
 
@@ -710,141 +706,146 @@ public class FlutterBlePlugin implements FlutterPlugin, ActivityAware,MethodCall
     /**
      * BluetoothGattCallback
      */
-    private BluetoothGattCallback getBluetoothGattCallback() {
-        return new BluetoothGattCallback() {
-            @Override
-            public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
-                System.out.println("[onConnectionStateChange] status: " + status + " newState: " + newState);
-                if (status == 133) {
-                    if (mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
-                        if (mBleController.getLruCacheDevice(gatt.getDevice().getAddress()).getDeviceState()
-                                == Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING) {
+    private final BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            System.out.println("[onConnectionStateChange] status: " + status + " newState: " + newState);
+            if (status == 133) {
+                if (mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
+                    if (mBleController.getLruCacheDevice(gatt.getDevice().getAddress()).getDeviceState()
+                            == Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTING) {
 
-                            //如果设备之前的状态是connecting,表示是正在连接中的设备。
-                            if (ruleConfig.getReConnectCount() - 1 >= 0) {
-                                System.out.println("重连一次");
-                                ruleConfig.setReConnectCount(ruleConfig.getReConnectCount() - 1);
-                                gatt.disconnect();
-                                gatt.close();
-                                connect();
-                            }
+                        //如果设备之前的状态是connecting,表示是正在连接中的设备。
+                        if (ruleConfig.getReConnectCount() - 1 >= 0) {
+                            System.out.println("重连一次,并在重连之前删除lru缓存");
+                            mBleController.removeLruCacheDevice(gatt.getDevice().getAddress());
+                            ruleConfig.setReConnectCount(ruleConfig.getReConnectCount() - 1);
+                            gatt.disconnect();
+                            gatt.close();
+                            connect();
                         }
                     }
                 }
-                if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                    if (!mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
-                        gatt.close();
-                    }else{
-                        disConnect(gatt.getDevice().getAddress());
-                    }
-                }
-                invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), newState).toByteArray());
             }
-
-            @Override
-            public void onServicesDiscovered(BluetoothGatt gatt, int status) {
-                System.out.println("[onServicesDiscovered] count: " + gatt.getServices().size() + " status: " + status);
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    if (mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
-                        BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(gatt.getDevice().getAddress());
-                        lruCacheDevice.setGatt(gatt);
-                        lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTED);
-                        mBleController.addLruCacheDevice(lruCacheDevice);
-                    }
-                }
-                Protos.DiscoverServicesResult.Builder p = Protos.DiscoverServicesResult.newBuilder();
-                p.setRemoteId(gatt.getDevice().getAddress());
-                for(BluetoothGattService s : gatt.getServices()) {
-                    p.addServices(ProtoMaker.from(gatt.getDevice(), s, gatt));
-                }
-                invokeUIThread("DiscoverServicesResult", p.build().toByteArray());
-            }
-
-            @Override
-            public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-                System.out.println("[onCharacteristicRead] uuid: " + characteristic.getUuid().toString() + " status: " + status);
-                Protos.ReadCharacteristicResponse.Builder p = Protos.ReadCharacteristicResponse.newBuilder();
-                p.setRemoteId(gatt.getDevice().getAddress());
-                p.setCharacteristic(ProtoMaker.from(gatt.getDevice(), characteristic, gatt));
-                invokeUIThread("ReadCharacteristicResponse", p.build().toByteArray());
-            }
-
-            @Override
-            public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
-                System.out.println("[onCharacteristicWrite] uuid: " + characteristic.getUuid().toString() + " status: " + status);
-                Protos.WriteCharacteristicRequest.Builder request = Protos.WriteCharacteristicRequest.newBuilder();
-                request.setRemoteId(gatt.getDevice().getAddress());
-                request.setCharacteristicUuid(characteristic.getUuid().toString());
-                request.setServiceUuid(characteristic.getService().getUuid().toString());
-                Protos.WriteCharacteristicResponse.Builder p = Protos.WriteCharacteristicResponse.newBuilder();
-                p.setRequest(request);
-                p.setSuccess(status == BluetoothGatt.GATT_SUCCESS);
-                invokeUIThread("WriteCharacteristicResponse", p.build().toByteArray());
-            }
-
-            @Override
-            public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
-                System.out.println("[onCharacteristicChanged] uuid: " + characteristic.getUuid().toString());
-                Protos.OnCharacteristicChanged.Builder p = Protos.OnCharacteristicChanged.newBuilder();
-                p.setRemoteId(gatt.getDevice().getAddress());
-                p.setCharacteristic(ProtoMaker.from(gatt.getDevice(), characteristic, gatt));
-                invokeUIThread("OnCharacteristicChanged", p.build().toByteArray());
-            }
-
-            @Override
-            public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
-                System.out.println("[onReadRemoteRssi] rssi: " + rssi + " status: " + status);
-                if (status == BluetoothGatt.GATT_SUCCESS) {
-                    Protos.DeviceRssi.Builder builder = Protos.DeviceRssi.newBuilder();
-                    builder.setRssi(rssi);
-                    builder.setRemoteId(gatt.getDevice().getAddress());
-                    invokeUIThread("DeviceRssi", builder.build().toByteArray());
+            if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                if (!mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
+                    gatt.close();
                 }
             }
+            invokeUIThread("DeviceState", ProtoMaker.from(gatt.getDevice(), newState).toByteArray());
+        }
 
-            @Override
-            public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
-                System.out.println( "[onMtuChanged] mtu: " + mtu + " status: " + status);
-                if(status == BluetoothGatt.GATT_SUCCESS) {
-                    if(mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
-                        BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(gatt.getDevice().getAddress());
-                        lruCacheDevice.setMtu(mtu);
-                        Protos.MtuSizeResponse.Builder p = Protos.MtuSizeResponse.newBuilder();
-                        p.setRemoteId(gatt.getDevice().getAddress());
-                        p.setMtu(mtu);
-                        invokeUIThread("MtuSize", p.build().toByteArray());
-                    }
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            System.out.println("[onServicesDiscovered] count: " + gatt.getServices().size() + " status: " + status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                if (mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
+                    BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(gatt.getDevice().getAddress());
+                    lruCacheDevice.setGatt(gatt);
+                    lruCacheDevice.setDeviceState(Protos.DeviceStateResponse.BluetoothDeviceState.CONNECTED);
+                    mBleController.addLruCacheDevice(lruCacheDevice);
                 }
             }
+            Protos.DiscoverServicesResult.Builder p = Protos.DiscoverServicesResult.newBuilder();
+            p.setRemoteId(gatt.getDevice().getAddress());
+            for(BluetoothGattService s : gatt.getServices()) {
+                p.addServices(ProtoMaker.from(gatt.getDevice(), s, gatt));
+            }
+            invokeUIThread("DiscoverServicesResult", p.build().toByteArray());
+        }
 
-            @Override
-            public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
-                System.out.println("[onDescriptorWrite] uuid: " + descriptor.getUuid().toString() + " status: " + status);
-                Protos.WriteDescriptorRequest.Builder request = Protos.WriteDescriptorRequest.newBuilder();
-                request.setRemoteId(gatt.getDevice().getAddress());
-                request.setDescriptorUuid(descriptor.getUuid().toString());
-                request.setCharacteristicUuid(descriptor.getCharacteristic().getUuid().toString());
-                request.setServiceUuid(descriptor.getCharacteristic().getService().getUuid().toString());
-                Protos.WriteDescriptorResponse.Builder p = Protos.WriteDescriptorResponse.newBuilder();
-                p.setRequest(request);
-                p.setSuccess(status == BluetoothGatt.GATT_SUCCESS);
-                invokeUIThread("WriteDescriptorResponse", p.build().toByteArray());
+        @Override
+        public void onCharacteristicRead(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            System.out.println("[onCharacteristicRead] uuid: " + characteristic.getUuid().toString() + " status: " + status);
+            Protos.ReadCharacteristicResponse.Builder p = Protos.ReadCharacteristicResponse.newBuilder();
+            p.setRemoteId(gatt.getDevice().getAddress());
+            p.setCharacteristic(ProtoMaker.from(gatt.getDevice(), characteristic, gatt));
+            invokeUIThread("ReadCharacteristicResponse", p.build().toByteArray());
+        }
 
-                if(descriptor.getUuid().compareTo(CCCD_ID) == 0) {
-                    // SetNotificationResponse
-                    Protos.SetNotificationResponse.Builder q = Protos.SetNotificationResponse.newBuilder();
-                    q.setRemoteId(gatt.getDevice().getAddress());
-                    q.setCharacteristic(ProtoMaker.from(gatt.getDevice(), descriptor.getCharacteristic(), gatt));
-                    invokeUIThread("SetNotificationResponse", q.build().toByteArray());
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            System.out.println("[onCharacteristicWrite] uuid: " + characteristic.getUuid().toString() + " status: " + status);
+            Protos.WriteCharacteristicRequest.Builder request = Protos.WriteCharacteristicRequest.newBuilder();
+            request.setRemoteId(gatt.getDevice().getAddress());
+            request.setCharacteristicUuid(characteristic.getUuid().toString());
+            request.setServiceUuid(characteristic.getService().getUuid().toString());
+            Protos.WriteCharacteristicResponse.Builder p = Protos.WriteCharacteristicResponse.newBuilder();
+            p.setRequest(request);
+            p.setSuccess(status == BluetoothGatt.GATT_SUCCESS);
+            invokeUIThread("WriteCharacteristicResponse", p.build().toByteArray());
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic) {
+            System.out.println("[onCharacteristicChanged] uuid: " + characteristic.getUuid().toString());
+            ///log
+            byte[] value = characteristic.getValue();
+            StringBuilder sb = new StringBuilder();
+            for (byte b : value) {
+                sb.append(String.format("%02X", b));
+            }
+            System.out.println("[onCharacteristicChanged] value-----------> :: "+sb.toString());
+
+            Protos.OnCharacteristicChanged.Builder p = Protos.OnCharacteristicChanged.newBuilder();
+            p.setRemoteId(gatt.getDevice().getAddress());
+            p.setCharacteristic(ProtoMaker.from(gatt.getDevice(), characteristic, gatt));
+            invokeUIThread("OnCharacteristicChanged", p.build().toByteArray());
+        }
+
+        @Override
+        public void onReadRemoteRssi(BluetoothGatt gatt, int rssi, int status) {
+            System.out.println("[onReadRemoteRssi] rssi: " + rssi + " status: " + status);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                Protos.DeviceRssi.Builder builder = Protos.DeviceRssi.newBuilder();
+                builder.setRssi(rssi);
+                builder.setRemoteId(gatt.getDevice().getAddress());
+                invokeUIThread("DeviceRssi", builder.build().toByteArray());
+            }
+        }
+
+        @Override
+        public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
+            System.out.println( "[onMtuChanged] mtu: " + mtu + " status: " + status);
+            if(status == BluetoothGatt.GATT_SUCCESS) {
+                if(mBleController.containsLruCacheDevice(gatt.getDevice().getAddress())) {
+                    BluetoothDeviceModel lruCacheDevice = mBleController.getLruCacheDevice(gatt.getDevice().getAddress());
+                    lruCacheDevice.setMtu(mtu);
+                    Protos.MtuSizeResponse.Builder p = Protos.MtuSizeResponse.newBuilder();
+                    p.setRemoteId(gatt.getDevice().getAddress());
+                    p.setMtu(mtu);
+                    invokeUIThread("MtuSize", p.build().toByteArray());
                 }
             }
+        }
 
-            @Override
-            public void onServiceChanged(@NonNull BluetoothGatt gatt) {
-                super.onServiceChanged(gatt);
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor, int status) {
+            System.out.println("[onDescriptorWrite] uuid: " + descriptor.getUuid().toString() + " status: " + status);
+            Protos.WriteDescriptorRequest.Builder request = Protos.WriteDescriptorRequest.newBuilder();
+            request.setRemoteId(gatt.getDevice().getAddress());
+            request.setDescriptorUuid(descriptor.getUuid().toString());
+            request.setCharacteristicUuid(descriptor.getCharacteristic().getUuid().toString());
+            request.setServiceUuid(descriptor.getCharacteristic().getService().getUuid().toString());
+            Protos.WriteDescriptorResponse.Builder p = Protos.WriteDescriptorResponse.newBuilder();
+            p.setRequest(request);
+            p.setSuccess(status == BluetoothGatt.GATT_SUCCESS);
+            invokeUIThread("WriteDescriptorResponse", p.build().toByteArray());
+
+            if(descriptor.getUuid().compareTo(CCCD_ID) == 0) {
+                // SetNotificationResponse
+                Protos.SetNotificationResponse.Builder q = Protos.SetNotificationResponse.newBuilder();
+                q.setRemoteId(gatt.getDevice().getAddress());
+                q.setCharacteristic(ProtoMaker.from(gatt.getDevice(), descriptor.getCharacteristic(), gatt));
+                invokeUIThread("SetNotificationResponse", q.build().toByteArray());
             }
-        };
-    }
+        }
+
+        @Override
+        public void onServiceChanged(@NonNull BluetoothGatt gatt) {
+            super.onServiceChanged(gatt);
+        }
+    };
 
     /**
      * judge Bluetooth is enable
