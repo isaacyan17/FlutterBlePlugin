@@ -1,5 +1,5 @@
 name: flutter_ble
-description: A new Flutter project.
+description: new Flutter plugin for connecting and communicationg with Bluetooth Low Energy devices, base on flutter_blue
 version: 0.0.1
 homepage:
 

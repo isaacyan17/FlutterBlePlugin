@@ -22,6 +22,8 @@ FlutterBlePlugin 基于[flutter_blue](!https://pub.flutter-io.cn/packages/flutte
 
 * 修复iOS native `getConnectedDevices`的异常问题
 
+* 修复蓝牙模块主动断开蓝牙导致的连接问题
+
 ## Setup
 
 ### Android 
@@ -77,7 +79,7 @@ FlutterBle _flutterBlePlugin = FlutterBle();
     List<ScanResult> r = _flutterBlePlugin.startScan()// 返回类型是一个list
 	Stream r =_flutterBlePlugin.scan({
                                     List<Guid> services = const [],  //service filter collection
-                                    Duration? timeout,  
+                                    Duration? timeout,
                                     bool allowDuplicates = false, // allow duplicate results when scan
                                   })      // 返回类型是Stream
 
