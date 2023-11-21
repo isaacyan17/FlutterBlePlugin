@@ -122,7 +122,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             // TODO: Implement Connect options (#36)
             [_centralManager connectPeripheral:peripheral options:nil];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"disconnect" isEqualToString:call.method]) {
@@ -131,7 +131,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             [_centralManager cancelPeripheralConnection:peripheral];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"deviceState" isEqualToString:call.method]) {
@@ -139,11 +139,12 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
         @try {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             result([self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"discoverServices" isEqualToString:call.method]) {
         NSString *remoteId = [call arguments];
+        NSLog(@"调用了发现服务方法！！！");
         @try {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             // Clear helper arrays
@@ -151,7 +152,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             [_characteristicsThatNeedDiscovered removeAllObjects ];
             [peripheral discoverServices:nil];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"services" isEqualToString:call.method]) {
@@ -159,7 +160,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
         @try {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             result([self toFlutterData:[self toServicesResultProto:peripheral]]);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"readCharacteristic" isEqualToString:call.method]) {
@@ -174,7 +175,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             // Trigger a read
             [peripheral readValueForCharacteristic:characteristic];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"readDescriptor" isEqualToString:call.method]) {
@@ -190,7 +191,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             CBDescriptor *descriptor = [self locateDescriptor:[request descriptorUuid] characteristic:characteristic];
             [peripheral readValueForDescriptor:descriptor];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"writeCharacteristic" isEqualToString:call.method]) {
@@ -207,7 +208,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             // Write to characteristic
             [peripheral writeValue:[request value] forCharacteristic:characteristic type:type];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"writeDescriptor" isEqualToString:call.method]) {
@@ -224,7 +225,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             // Write descriptor
             [peripheral writeValue:[request value] forDescriptor:descriptor];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"setNotification" isEqualToString:call.method]) {
@@ -239,7 +240,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             // Set notification value
             [peripheral setNotifyValue:[request enable] forCharacteristic:characteristic];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"mtu" isEqualToString:call.method]) {
@@ -248,7 +249,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             uint32_t mtu = [self getMtu:peripheral];
             result([self toFlutterData:[self toMtuSizeResponseProto:peripheral mtu:mtu]]);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     } else if([@"requestMtu" isEqualToString:call.method]) {
@@ -259,7 +260,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
             CBPeripheral *peripheral = [self findPeripheral:remoteId];
             [peripheral readRSSI];
             result(nil);
-        } @catch(FlutterError *e) {
+        } @catch(NSException *e) {
             result(e);
         }
     }
@@ -380,8 +381,8 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral advertisementData:(NSDictionary<NSString *,id> *)advertisementData RSSI:(NSNumber *)RSSI {
     [self.scannedPeripherals setObject:peripheral
                                 forKey:[[peripheral identifier] UUIDString]];
+    NSLog(@"%@ ---> 广播数据：%@",peripheral.name,advertisementData);
     ProtosScanResult *result = [self toScanResultProto:peripheral advertisementData:advertisementData RSSI:RSSI];
-//    NSLog(@"%@",RSSI);
     [_channel invokeMethod:@"ScanResult" arguments:[self toFlutterData:result]];
 }
 
@@ -398,7 +399,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"DeviceState" arguments:[self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]];
 }
 
-- (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+- (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral error:(NSException *)error {
     NSLog(@"didDisconnectPeripheral");
     // Unregister self as delegate for peripheral, not working #42
     peripheral.delegate = nil;
@@ -407,14 +408,14 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"DeviceState" arguments:[self toFlutterData:[self toDeviceStateProto:peripheral state:peripheral.state]]];
 }
 
-- (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSError *)error {
+- (void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral error:(NSException *)error {
     // TODO:?
 }
 
 //
 // CBPeripheralDelegate methods
 //
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverServices:(NSException *)error {
     NSLog(@"didDiscoverServices");
     // Send negotiated mtu size
     uint32_t mtu = [self getMtu:peripheral];
@@ -429,7 +430,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverCharacteristicsForService:(CBService *)service error:(NSException *)error {
     NSLog(@"didDiscoverCharacteristicsForService");
     // Loop through and discover descriptors for characteristics
     [_servicesThatNeedDiscovered removeObject:service];
@@ -439,7 +440,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverDescriptorsForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverDescriptorsForCharacteristic:(CBCharacteristic *)characteristic error:(NSException *)error {
     NSLog(@"didDiscoverDescriptorsForCharacteristic");
     [_characteristicsThatNeedDiscovered removeObject:characteristic];
     if(_servicesThatNeedDiscovered.count > 0 || _characteristicsThatNeedDiscovered.count > 0) {
@@ -451,7 +452,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"DiscoverServicesResult" arguments:[self toFlutterData:result]];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didDiscoverIncludedServicesForService:(CBService *)service error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didDiscoverIncludedServicesForService:(CBService *)service error:(NSException *)error {
     NSLog(@"didDiscoverIncludedServicesForService");
     // Loop through and discover characteristics for secondary services
     for(CBService *ss in [service includedServices]) {
@@ -459,7 +460,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSException *)error {
     NSLog(@"didUpdateValueForCharacteristic %@", [peripheral.identifier UUIDString]);
     ProtosReadCharacteristicResponse *result = [[ProtosReadCharacteristicResponse alloc] init];
     [result setRemoteId:[peripheral.identifier UUIDString]];
@@ -473,7 +474,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"OnCharacteristicChanged" arguments:[self toFlutterData:onChangedResult]];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForCharacteristic:(CBCharacteristic *)characteristic error:(NSException *)error {
     NSLog(@"didWriteValueForCharacteristic");
     ProtosWriteCharacteristicRequest *request = [[ProtosWriteCharacteristicRequest alloc] init];
     [request setRemoteId:[peripheral.identifier UUIDString]];
@@ -485,7 +486,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"WriteCharacteristicResponse" arguments:[self toFlutterData:result]];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateNotificationStateForCharacteristic:(CBCharacteristic *)characteristic error:(NSException *)error {
     NSLog(@"didUpdateNotificationStateForCharacteristic");
     // Read CCC descriptor of characteristic
     CBDescriptor *cccd = [self findCCCDescriptor:characteristic];
@@ -503,7 +504,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [peripheral readValueForDescriptor:cccd];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForDescriptor:(CBDescriptor *)descriptor error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didUpdateValueForDescriptor:(CBDescriptor *)descriptor error:(NSException *)error {
     ProtosReadDescriptorRequest *q = [[ProtosReadDescriptorRequest alloc] init];
     [q setRemoteId:[peripheral.identifier UUIDString]];
     [q setCharacteristicUuid:[descriptor.characteristic.UUID fullUUIDString]];
@@ -531,7 +532,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     }
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForDescriptor:(CBDescriptor *)descriptor error:(NSError *)error {
+- (void)peripheral:(CBPeripheral *)peripheral didWriteValueForDescriptor:(CBDescriptor *)descriptor error:(NSException *)error {
     ProtosWriteDescriptorRequest *request = [[ProtosWriteDescriptorRequest alloc] init];
     [request setRemoteId:[peripheral.identifier UUIDString]];
     [request setCharacteristicUuid:[descriptor.characteristic.UUID fullUUIDString]];
@@ -549,7 +550,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
     [_channel invokeMethod:@"WriteDescriptorResponse" arguments:[self toFlutterData:result]];
 }
 
-- (void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSError *)error{
+- (void)peripheral:(CBPeripheral *)peripheral didReadRSSI:(NSNumber *)RSSI error:(NSException *)error{
     ProtosDeviceRssi *result = [[ProtosDeviceRssi alloc]init];
     [result setRssi:RSSI.intValue];
     [result setRemoteId:[[peripheral identifier] UUIDString]];
@@ -567,6 +568,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 
 - (ProtosBluetoothState*)toBluetoothStateProto:(CBManagerState)state {
     ProtosBluetoothState *result = [[ProtosBluetoothState alloc] init];
+    NSLog(@"iOS Bluetooth State: ---------> %d",state);
     switch(state) {
         case CBManagerStateResetting:
             [result setState:ProtosBluetoothState_State_TurningOn];
@@ -627,6 +629,7 @@ typedef NS_ENUM(NSUInteger, LogLevel) {
 
 - (ProtosBluetoothDevice*)toDeviceProto:(CBPeripheral *)peripheral {
     ProtosBluetoothDevice *result = [[ProtosBluetoothDevice alloc] init];
+    NSLog(@"%@",peripheral.name);
     [result setName:[peripheral name]];
     [result setRemoteId:[[peripheral identifier] UUIDString]];
     [result setType:ProtosBluetoothDevice_Type_Le]; // TODO: Does iOS differentiate?
